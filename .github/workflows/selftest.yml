@@ -1,0 +1,26 @@
+name: Self-test
+
+# Guards the conformance checker against itself. Runs check.sh against a
+# known-good stub AS (must pass) and a known-bad stub AS (must fail), so a
+# checker regression — one that stops reaching the server, or stops asserting —
+# fails CI before it can be tagged and fanned out to every conformer.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: Checker self-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run checker self-test (good must pass, bad must fail)
+        run: ./conformance/selftest/run.sh
