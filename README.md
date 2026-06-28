@@ -32,7 +32,10 @@ posture** it conforms to, e.g.:
 Then runs the conformance check against its own running server in CI:
 
 ```sh
+# web app on the default /api/mcp
 conformance/check.sh https://replog.holthome.net opaque-no-refresh mcp-only
+# standalone server on a different path
+conformance/check.sh https://mcp.holthome.net jwt-refresh mcp-only --mcp-path /mcp
 ```
 
 The check fetches the live `.well-known` documents + does a DCR round-trip and
@@ -42,12 +45,12 @@ crept in originally.
 
 ## Known conformers
 
-| Project | Lang | Profile | Scope | Notes |
-| --- | --- | --- | --- | --- |
-| `replog` | Go | opaque-no-refresh | mcp-only | dedicated `mcp_tokens` store |
-| `whiskey-whiskey-whiskey` | TS | opaque-no-refresh | shared-pat | reuses the generic PAT store |
-| `marginalia` | TS | opaque-no-refresh | shared-pat | verbatim port of W.W.W. |
-| `homelab-mcp` | Python | jwt-refresh | mcp-only | RS256 + rotating refresh tokens |
+| Project | Lang | Profile | Scope | MCP path | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `replog` | Go | opaque-no-refresh | mcp-only | `/api/mcp` | dedicated `mcp_tokens` store |
+| `whiskey-whiskey-whiskey` | TS | opaque-no-refresh | shared-pat | `/api/mcp` | reuses the generic PAT store |
+| `marginalia` | TS | opaque-no-refresh | shared-pat | `/api/mcp` | verbatim port of W.W.W. |
+| `homelab-mcp` | Python | jwt-refresh | mcp-only | `/mcp` | RS256 + rotating refresh tokens; standalone server |
 
 ## Versioning
 

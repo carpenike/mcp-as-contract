@@ -10,11 +10,15 @@
 # actively probed here.
 #
 # Usage:
-#   conformance/check.sh <origin> <profile> <scope> [--skip-dcr]
+#   conformance/check.sh <origin> <profile> <scope> [--mcp-path <path>] [--skip-dcr]
 #
-#   <origin>   canonical public base URL, no trailing slash (e.g. https://replog.holthome.net)
-#   <profile>  opaque-no-refresh | jwt-refresh
-#   <scope>    mcp-only | shared-pat   (recorded only; not auto-verified in v1.0)
+#   <origin>     canonical public base URL, no trailing slash (e.g. https://replog.holthome.net)
+#   <profile>    opaque-no-refresh | jwt-refresh
+#   <scope>      mcp-only | shared-pat   (recorded only; not auto-verified)
+#   --mcp-path   the app's MCP resource path (default /api/mcp). The path-suffixed
+#                PRM is served at /.well-known/oauth-protected-resource<path> and
+#                its `resource` must byte-match <origin><path>. Standalone servers
+#                may use /mcp or another path; web apps conventionally use /api/mcp.
 #
 # Requires: curl, jq.
 set -euo pipefail
@@ -25,13 +29,27 @@ CONTRACT="${SCRIPT_DIR}/../contract.json"
 origin="${1:-}"
 profile="${2:-}"
 scope="${3:-}"
-skip_dcr="${4:-}"
+mcp_path="/api/mcp"
+skip_dcr=""
 
 if [[ -z "$origin" || -z "$profile" || -z "$scope" ]]; then
-  echo "usage: $0 <origin> <profile> <scope> [--skip-dcr]" >&2
+  echo "usage: $0 <origin> <profile> <scope> [--mcp-path <path>] [--skip-dcr]" >&2
   exit 2
 fi
+shift 3
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-dcr)     skip_dcr="--skip-dcr" ;;
+    --mcp-path)     shift; mcp_path="${1:-}" ;;
+    --mcp-path=*)   mcp_path="${1#*=}" ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 origin="${origin%/}"
+mcp_path="/${mcp_path#/}"   # ensure exactly one leading slash
+mcp_path="${mcp_path%/}"    # strip any trailing slash so the byte-match is clean
+[[ -n "$mcp_path" && "$mcp_path" != "/" ]] || { echo "--mcp-path must be a non-root path like /api/mcp" >&2; exit 2; }
 
 for bin in curl jq; do
   command -v "$bin" >/dev/null 2>&1 || { echo "missing required tool: $bin" >&2; exit 2; }
@@ -40,7 +58,7 @@ done
 
 version="$(jq -r '.version' "$CONTRACT")"
 echo "== PocketID MCP-AS conformance v${version} =="
-echo "   origin=${origin} profile=${profile} scope=${scope}"
+echo "   origin=${origin} profile=${profile} scope=${scope} mcp-path=${mcp_path}"
 echo
 
 pass=0; fail=0
@@ -56,7 +74,9 @@ bad()  { echo "  FAIL  $1"; fail=$((fail+1)); }
 #     so the status never reached the caller and every GET assertion
 #     false-failed as "HTTP none".
 http_get() {
-  curl -sS -o "$2" -w '%{http_code}' "$1" 2>/dev/null || echo "000"
+  local code
+  code="$(curl -sS -o "$2" -w '%{http_code}' "$1" 2>/dev/null)" || true
+  echo "${code:-000}"
 }
 
 # json_has_member <json> <jq-path> <expected-value-as-member>
@@ -110,8 +130,8 @@ check_prm() {
   [[ "$(jq -rc '.authorization_servers' <<<"$body")" == "[\"${origin}\"]" ]] && ok "${path}: authorization_servers == [origin]" || bad "${path}: authorization_servers"
   contains '.bearer_methods_supported' header <<<"$body" && ok "${path}: bearer_methods_supported has header" || bad "${path}: bearer_methods_supported missing header"
 }
-check_prm "/.well-known/oauth-protected-resource"        "${origin}"
-check_prm "/.well-known/oauth-protected-resource/api/mcp" "${origin}/api/mcp"
+check_prm "/.well-known/oauth-protected-resource"            "${origin}"
+check_prm "/.well-known/oauth-protected-resource${mcp_path}" "${origin}${mcp_path}"
 
 echo "[4] RFC 7591 — DCR round-trip"
 if [[ "$skip_dcr" == "--skip-dcr" ]]; then
@@ -124,7 +144,8 @@ else
   tmp="$(mktemp)"
   status="$(curl -sS -o "$tmp" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -d "$reg_body" \
-    "${origin}/oauth/register" 2>/dev/null || echo "000")"
+    "${origin}/oauth/register" 2>/dev/null)" || true
+  status="${status:-000}"
   reg="$(cat "$tmp")"; rm -f "$tmp"
   if [[ "$status" != "201" ]]; then
     bad "POST /oauth/register -> HTTP ${status} (want 201)"
@@ -143,6 +164,6 @@ else
 fi
 
 echo
-echo "scope posture '${scope}' is declared, not auto-verified in v1.0 (needs a minted token)."
+echo "scope posture '${scope}' is declared, not auto-verified (needs a minted token)."
 echo "== ${pass} passed, ${fail} failed =="
 [[ "$fail" -eq 0 ]]

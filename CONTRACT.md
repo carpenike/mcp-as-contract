@@ -1,4 +1,4 @@
-# PocketID MCP-AS Contract — v1.0.1
+# PocketID MCP-AS Contract — v1.1.0
 
 > Status: **active**. Source of truth for every `carpenike` app that embeds an
 > MCP OAuth 2.1 Authorization Server federating login to PocketID.
@@ -52,7 +52,14 @@ invisibly). Field names below are exact and non-negotiable.
 **RFC 9728 — Protected Resource Metadata**, served at **both**:
 
 - `/.well-known/oauth-protected-resource` (origin-root; `resource` = `<origin>`)
-- `/.well-known/oauth-protected-resource/api/mcp` (path-suffixed; `resource` = `<origin>/api/mcp`)
+- `/.well-known/oauth-protected-resource<mcp_path>` (path-suffixed; `resource` = `<origin><mcp_path>`)
+
+`<mcp_path>` is the app's MCP resource path — **app-declared**, defaulting to
+`/api/mcp`. Apps that mount MCP under an `/api` router use `/api/mcp` by
+convention; a standalone MCP server may use `/mcp` or another path. Whatever the
+path, the path-suffixed PRM's well-known URL embeds it and its `resource` is
+`<origin><mcp_path>`. The path is NOT fixed by the contract — only the
+byte-match (below) and the field shapes are.
 
 | field | value |
 | --- | --- |
@@ -62,13 +69,16 @@ invisibly). Field names below are exact and non-negotiable.
 
 Both variants are required: spec-strict clients (VS Code 1.106–1.107) **reject**
 the origin-root PRM because its `resource` (`<origin>`) doesn't equal the MCP URL
-they called (`<origin>/api/mcp`), and refuse DCR. Older clients use the
+they called (`<origin><mcp_path>`), and refuse DCR. Older clients use the
 origin-root variant. Serve both.
 
 > **The §3.3 byte-match is the #1 silent-failure mode.** If the AS derives the
 > origin from static config, that config MUST equal the public URL exactly
 > (scheme, host, port). Validate it at startup and fail loudly; do not let a
-> misconfigured origin ship a PRM the client will silently reject.
+> misconfigured origin ship a PRM the client will silently reject. The same
+> applies to `<mcp_path>`: the advertised `resource` and the `WWW-Authenticate`
+> hint (§1.7) MUST be derived from the same value the transport is actually
+> mounted at, so the URL and the advertised resource can't drift.
 
 ### 1.2 Authorization-code grant + PKCE
 
@@ -127,8 +137,9 @@ client_code_challenge}`, and 302s back to the client.
 ### 1.7 Unauthorized challenge
 
 A `401` from the RS MUST carry a `WWW-Authenticate: Bearer` header that includes
-`resource_metadata="<origin>/.well-known/oauth-protected-resource/api/mcp"`, so a
-client can discover the AS and begin the dance (RFC 9728 §5.3).
+`resource_metadata="<origin>/.well-known/oauth-protected-resource<mcp_path>"`, so
+a client can discover the AS and begin the dance (RFC 9728 §5.3). The
+`<mcp_path>` here MUST be the same value the transport is mounted at (§1.1).
 
 ### 1.8 Errors
 
@@ -185,20 +196,31 @@ already has a user-facing PAT system the OAuth token reuses. (`whiskey-whiskey-w
 Run [`conformance/check.sh`](./conformance/check.sh) against a live AS:
 
 ```sh
-conformance/check.sh <origin> <profile> <scope>
-# e.g.
+conformance/check.sh <origin> <profile> <scope> [--mcp-path <path>] [--skip-dcr]
+# e.g. a web app on the default /api/mcp:
 conformance/check.sh https://replog.holthome.net opaque-no-refresh mcp-only
+# e.g. a standalone server on /mcp:
+conformance/check.sh https://mcp.holthome.net jwt-refresh mcp-only --mcp-path /mcp
 ```
 
-It validates §1.1 discovery (both PRM variants + the byte-match), the
-profile-specific `jwks_uri` rule (§2), and a DCR round-trip (§1.4). It does
-**not** drive an interactive PocketID login (that needs a human); the federation
-legs (§1.3) are asserted by each app's own integration tests.
+It validates §1.1 discovery (both PRM variants + the byte-match at the declared
+`--mcp-path`), the profile-specific `jwks_uri` rule (§2), and a DCR round-trip
+(§1.4). It does **not** drive an interactive PocketID login (that needs a human);
+the federation legs (§1.3) are asserted by each app's own integration tests.
 
 ---
 
 ## Changelog
 
+- **1.1.0** — the **MCP resource path is now app-declared** (default `/api/mcp`),
+  not a fixed constant. The path-suffixed PRM, its `resource`, and the §1.7
+  `WWW-Authenticate` hint all derive from `<mcp_path>`; `check.sh` gains an
+  `--mcp-path` flag (defaulting to `/api/mcp`). Backward-compatible: web apps on
+  `/api/mcp` are unaffected and a `v1.0` declaration remains valid. Lets a
+  standalone server (e.g. `homelab-mcp` on `/mcp`) conform without contorting
+  its URL layout. Field shapes and the §3.3 byte-match are unchanged. Also a
+  cosmetic checker fix: a connection failure now prints `HTTP 000` instead of a
+  doubled `000000`.
 - **1.0.1** — conformance tooling fix only, **no normative changes**: corrected a
   subshell bug in `conformance/check.sh` where the HTTP status was set in a
   `$(...)` command-substitution subshell and never reached the caller, so every

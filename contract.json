@@ -1,6 +1,6 @@
 {
   "contract": "pocketid-mcp-as",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Shared contract for self-hosted MCP OAuth 2.1 Authorization Servers that federate login to PocketID. Human spec: CONTRACT.md.",
   "core": {
     "discovery": {
@@ -21,9 +21,11 @@
         }
       },
       "protected_resource_metadata": {
+        "comment": "{mcp_path} is the app's MCP resource path, app-declared, default /api/mcp. The path-suffixed PRM lives at /.well-known/oauth-protected-resource{mcp_path} and its resource is {origin}{mcp_path}.",
+        "mcp_path": { "app_declared": true, "default": "/api/mcp" },
         "paths": [
           { "path": "/.well-known/oauth-protected-resource", "resource": "{origin}" },
-          { "path": "/.well-known/oauth-protected-resource/api/mcp", "resource": "{origin}/api/mcp" }
+          { "path": "/.well-known/oauth-protected-resource{mcp_path}", "resource": "{origin}{mcp_path}" }
         ],
         "required_fields": {
           "authorization_servers": ["{origin}"],
@@ -86,9 +88,9 @@
     "shared-pat": "Minted token rides the app's general PAT branch and is valid across the API, role-capped."
   },
   "conformers": {
-    "replog": { "lang": "go", "profile": "opaque-no-refresh", "scope": "mcp-only", "origin": "https://replog.holthome.net" },
-    "whiskey-whiskey-whiskey": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat" },
-    "marginalia": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat" },
-    "homelab-mcp": { "lang": "python", "profile": "jwt-refresh", "scope": "mcp-only", "origin": "https://mcp.holthome.net" }
+    "replog": { "lang": "go", "profile": "opaque-no-refresh", "scope": "mcp-only", "mcp_path": "/api/mcp", "origin": "https://replog.holthome.net" },
+    "whiskey-whiskey-whiskey": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat", "mcp_path": "/api/mcp" },
+    "marginalia": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat", "mcp_path": "/api/mcp" },
+    "homelab-mcp": { "lang": "python", "profile": "jwt-refresh", "scope": "mcp-only", "mcp_path": "/mcp", "origin": "https://mcp.holthome.net" }
   }
 }
