@@ -1,0 +1,94 @@
+{
+  "contract": "pocketid-mcp-as",
+  "version": "1.0.0",
+  "description": "Shared contract for self-hosted MCP OAuth 2.1 Authorization Servers that federate login to PocketID. Human spec: CONTRACT.md.",
+  "core": {
+    "discovery": {
+      "authorization_server_metadata": {
+        "path": "/.well-known/oauth-authorization-server",
+        "required_fields": {
+          "issuer": "{origin}",
+          "authorization_endpoint": "{origin}/oauth/authorize",
+          "token_endpoint": "{origin}/oauth/token",
+          "registration_endpoint": "{origin}/oauth/register",
+          "response_types_supported": ["code"],
+          "grant_types_supported": ["authorization_code"],
+          "code_challenge_methods_supported": ["S256"],
+          "scopes_supported": ["openid", "email", "profile"]
+        },
+        "required_members": {
+          "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"]
+        }
+      },
+      "protected_resource_metadata": {
+        "paths": [
+          { "path": "/.well-known/oauth-protected-resource", "resource": "{origin}" },
+          { "path": "/.well-known/oauth-protected-resource/api/mcp", "resource": "{origin}/api/mcp" }
+        ],
+        "required_fields": {
+          "authorization_servers": ["{origin}"],
+          "bearer_methods_supported": ["header"]
+        },
+        "resource_must_byte_match_request_url": true
+      }
+    },
+    "pkce": { "required": true, "methods": ["S256"] },
+    "federation": "two-leg-pkce-pocketid",
+    "dcr": {
+      "endpoint": "/oauth/register",
+      "rate_limited_per_ip": true,
+      "redirect_uri_policy": "allowlist-filter",
+      "redirect_uri_allowlist_prefixes": [
+        "https://claude.ai/",
+        "https://claude.com/",
+        "http://127.0.0.1:",
+        "http://127.0.0.1/",
+        "http://localhost:",
+        "http://localhost/",
+        "https://vscode.dev/redirect",
+        "https://insiders.vscode.dev/redirect"
+      ],
+      "client_secret_expires_at": 0
+    },
+    "token_endpoint": {
+      "path": "/oauth/token",
+      "grant_types": ["authorization_code"],
+      "client_auth": ["client_secret_post", "client_secret_basic"],
+      "authorization_code_single_use": true,
+      "cache_control": "no-store"
+    },
+    "tokens": { "hashed_at_rest": "sha256", "revocable": true },
+    "unauthorized_challenge": {
+      "status": 401,
+      "header": "WWW-Authenticate",
+      "scheme": "Bearer",
+      "must_include_params": ["resource_metadata"]
+    }
+  },
+  "profiles": {
+    "opaque-no-refresh": {
+      "token_format": "opaque",
+      "refresh_tokens": false,
+      "jwks_uri_present": false,
+      "default_access_token_ttl_days": 90,
+      "as_metadata_forbidden_fields": ["jwks_uri"]
+    },
+    "jwt-refresh": {
+      "token_format": "jwt-rs256",
+      "refresh_tokens": true,
+      "jwks_uri_present": true,
+      "as_metadata_required_fields": ["jwks_uri"],
+      "extra_grant_types": ["refresh_token"]
+    }
+  },
+  "scope_postures": {
+    "mcp-only": "Minted token is accepted only on the MCP resource path; cannot be replayed against the broader API.",
+    "shared-pat": "Minted token rides the app's general PAT branch and is valid across the API, role-capped."
+  },
+  "conformers": {
+    "replog": { "lang": "go", "profile": "opaque-no-refresh", "scope": "mcp-only", "origin": "https://replog.holthome.net" },
+    "whiskey-whiskey-whiskey": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat" },
+    "marginalia": { "lang": "ts", "profile": "opaque-no-refresh", "scope": "shared-pat" },
+    "homelab-mcp": { "lang": "python", "profile": "jwt-refresh", "scope": "mcp-only", "origin": "https://mcp.holthome.net" }
+  }
+}
