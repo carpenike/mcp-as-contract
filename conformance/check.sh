@@ -47,11 +47,16 @@ pass=0; fail=0
 ok()   { echo "  PASS  $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL  $1"; fail=$((fail+1)); }
 
-# get <url> -> echoes body, sets $HTTP_STATUS
-get() {
-  local url="$1" tmp; tmp="$(mktemp)"
-  HTTP_STATUS="$(curl -fsS -o "$tmp" -w '%{http_code}' "$url" 2>/dev/null || true)"
-  cat "$tmp"; rm -f "$tmp"
+# http_get <url> <body_out_file> -> prints the HTTP status code to stdout and
+# writes the response body to <body_out_file>. Two deliberate choices:
+#   * No -f/--fail — we assert on the status ourselves and still want the body
+#     on a 4xx/5xx for diagnostics.
+#   * Status is RETURNED, not stashed in a global. An earlier version set a
+#     global inside a "$(...)" command substitution, which runs in a subshell,
+#     so the status never reached the caller and every GET assertion
+#     false-failed as "HTTP none".
+http_get() {
+  curl -sS -o "$2" -w '%{http_code}' "$1" 2>/dev/null || echo "000"
 }
 
 # json_has_member <json> <jq-path> <expected-value-as-member>
@@ -59,9 +64,11 @@ contains() { jq -e --arg v "$2" "$1 | index(\$v) != null" >/dev/null 2>&1; }
 
 echo "[1] RFC 8414 — authorization-server metadata"
 AS_URL="${origin}/.well-known/oauth-authorization-server"
-AS="$(get "$AS_URL")"
-if [[ "${HTTP_STATUS:-}" != "200" ]]; then
-  bad "GET ${AS_URL} -> HTTP ${HTTP_STATUS:-none} (want 200)"
+AS_BODY="$(mktemp)"
+status="$(http_get "$AS_URL" "$AS_BODY")"
+AS="$(cat "$AS_BODY")"; rm -f "$AS_BODY"
+if [[ "$status" != "200" ]]; then
+  bad "GET ${AS_URL} -> HTTP ${status} (want 200)"
 else
   [[ "$(jq -r '.issuer' <<<"$AS")" == "$origin" ]] && ok "issuer == origin" || bad "issuer != origin (got $(jq -r '.issuer' <<<"$AS"))"
   [[ "$(jq -r '.authorization_endpoint' <<<"$AS")" == "${origin}/oauth/authorize" ]] && ok "authorization_endpoint" || bad "authorization_endpoint"
@@ -93,10 +100,12 @@ fi
 
 echo "[3] RFC 9728 — protected-resource metadata (both variants)"
 check_prm() {
-  local path="$1" want_resource="$2" url body
+  local path="$1" want_resource="$2" url body bf status
   url="${origin}${path}"
-  body="$(get "$url")"
-  if [[ "${HTTP_STATUS:-}" != "200" ]]; then bad "GET ${path} -> HTTP ${HTTP_STATUS:-none}"; return; fi
+  bf="$(mktemp)"
+  status="$(http_get "$url" "$bf")"
+  body="$(cat "$bf")"; rm -f "$bf"
+  if [[ "$status" != "200" ]]; then bad "GET ${path} -> HTTP ${status}"; return; fi
   [[ "$(jq -r '.resource' <<<"$body")" == "$want_resource" ]] && ok "${path}: resource byte-matches ${want_resource}" || bad "${path}: resource '$(jq -r '.resource' <<<"$body")' != '${want_resource}' (RFC 9728 §3.3)"
   [[ "$(jq -rc '.authorization_servers' <<<"$body")" == "[\"${origin}\"]" ]] && ok "${path}: authorization_servers == [origin]" || bad "${path}: authorization_servers"
   contains '.bearer_methods_supported' header <<<"$body" && ok "${path}: bearer_methods_supported has header" || bad "${path}: bearer_methods_supported missing header"
@@ -113,9 +122,9 @@ else
   reg_body="$(jq -nc --arg a "$allowed" --arg d "$disallowed" \
     '{client_name:"mcp-as-contract conformance probe", redirect_uris:[$a,$d], token_endpoint_auth_method:"client_secret_post"}')"
   tmp="$(mktemp)"
-  status="$(curl -fsS -o "$tmp" -w '%{http_code}' -X POST \
+  status="$(curl -sS -o "$tmp" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -d "$reg_body" \
-    "${origin}/oauth/register" 2>/dev/null || true)"
+    "${origin}/oauth/register" 2>/dev/null || echo "000")"
   reg="$(cat "$tmp")"; rm -f "$tmp"
   if [[ "$status" != "201" ]]; then
     bad "POST /oauth/register -> HTTP ${status} (want 201)"

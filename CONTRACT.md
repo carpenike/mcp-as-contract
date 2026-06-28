@@ -1,4 +1,4 @@
-# PocketID MCP-AS Contract — v1.0.0
+# PocketID MCP-AS Contract — v1.0.1
 
 > Status: **active**. Source of truth for every `carpenike` app that embeds an
 > MCP OAuth 2.1 Authorization Server federating login to PocketID.
@@ -199,5 +199,11 @@ legs (§1.3) are asserted by each app's own integration tests.
 
 ## Changelog
 
+- **1.0.1** — conformance tooling fix only, **no normative changes**: corrected a
+  subshell bug in `conformance/check.sh` where the HTTP status was set in a
+  `$(...)` command-substitution subshell and never reached the caller, so every
+  GET-based assertion false-failed as "HTTP none". The spec (this document and
+  `contract.json`) is byte-identical to 1.0.0; a `v1.0` conformance declaration
+  remains valid.
 - **1.0.0** — initial contract extracted from the `replog` / `whiskey-whiskey-whiskey` /
   `marginalia` / `homelab-mcp` implementations.

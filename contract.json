@@ -1,6 +1,6 @@
 {
   "contract": "pocketid-mcp-as",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shared contract for self-hosted MCP OAuth 2.1 Authorization Servers that federate login to PocketID. Human spec: CONTRACT.md.",
   "core": {
     "discovery": {
